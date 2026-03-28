@@ -1,0 +1,95 @@
+# pyproject.toml
+[project]
+name = "heist"
+version = "1.0.0"
+description = "A live security demo showing what happens when a voice AI gets socially engineered."
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = { text = "MIT" }
+dependencies = [
+    # ── LangGraph / LangChain ──────────────────────────────────────────────
+    "langgraph>=0.2.0",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "langchain-openai>=0.1.0",   # OpenAI-compatible client → Nebius endpoint
+
+    # ── Networking & async ─────────────────────────────────────────────────
+    "aiohttp>=3.9.0",
+
+    # ── Speech ────────────────────────────────────────────────────────────
+    "speechmatics-python>=1.11.0",
+    "speechmatics-tts>=0.1.0",
+
+    # ── Audio ─────────────────────────────────────────────────────────────
+    "pydub>=0.25.1",
+    "simpleaudio>=1.0.4",
+
+    # ── UI & utilities ─────────────────────────────────────────────────────
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+# `heist-demo`  — runs the full heist security demo
+# `heist-audio` — pre-generates Speechmatics voice audio files
+# `heist-verify`— pre-flight checks (API keys, connectivity)
+heist-demo   = "heist.__main__:main"
+heist-audio  = "heist.scripts.generate_audio:main"
+heist-verify = "heist.verify:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+dev = [
+    "ruff>=0.7.0",
+    "mypy>=1.8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# src layout — only pick up packages under src/
+where = ["src"]
+
+[tool.uv]
+# uv manages the virtualenv; editable install means src/heist is always live
+dev-dependencies = [
+    "ruff>=0.7.0",
+    "mypy>=1.8.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+pythonpath   = ["src"]           # lets tests import heist.* without installing
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: requires live services (Speechmatics, Nebius)",
+]
+addopts = ["-v", "--tb=short"]
+
+[tool.ruff]
+line-length    = 88
+target-version = "py311"
+src            = ["src"]         # teaches ruff about the src layout
+exclude        = [".venv", "__pycache__", "tests/audio"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]                # line length handled by formatter
+
+[tool.ruff.lint.isort]
+known-first-party = ["heist"]
+
+[tool.mypy]
+python_version    = "3.11"
+mypy_path         = "src"
+strict            = false
+ignore_missing_imports = true
