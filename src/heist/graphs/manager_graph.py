@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/graphs/manager_graph.py
+# module: heist.graphs.manager_graph
+# role: module
+# neighbors: __init__.py, bank_graph.py, state.py, tools.py
+# exports: ManagerGraph
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 graphs/manager_graph.py
 
@@ -27,8 +37,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from graphs.state import ManagerState
-from graphs.tools import MANAGER_TOOLS
+from heist.graphs.state import ManagerState
+from heist.graphs.tools import MANAGER_TOOLS
 
 # ---------------------------------------------------------------------------
 # System prompt  (Patricia persona)

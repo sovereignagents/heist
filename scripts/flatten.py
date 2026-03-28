@@ -2,10 +2,10 @@
 # === QV-LLM:BEGIN ===
 # path: scripts/flatten.py
 # role: module
-# neighbors: annotate_headers.py
+# neighbors: annotate_headers.py, generate_audio.py
 # exports: FileStat, should_skip_dir, iter_files, safe_slug, read_text_file, count_lines, flatten_to_file, write_manifest (+1 more)
-# git_branch: feature/speechmaticsRefactoring
-# git_commit: a02fa3a
+# git_branch: main
+# git_commit: 1734031
 # === QV-LLM:END ===
 
 from __future__ import annotations

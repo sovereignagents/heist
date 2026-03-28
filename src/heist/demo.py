@@ -1,3 +1,12 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/demo.py
+# module: heist.demo
+# role: module
+# neighbors: __init__.py, __main__.py, audio.py, text.py
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.demo
 ~~~~~~~~~~

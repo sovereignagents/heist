@@ -1,3 +1,10 @@
+# === QV-LLM:BEGIN ===
+# path: pyproject.toml
+# role: module
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 # pyproject.toml
 [project]
 name = "heist"
@@ -30,12 +37,9 @@ dependencies = [
 ]
 
 [project.scripts]
-# `heist-demo`  — runs the full heist security demo
-# `heist-audio` — pre-generates Speechmatics voice audio files
-# `heist-verify`— pre-flight checks (API keys, connectivity)
-heist-demo   = "heist.__main__:main"
-heist-audio  = "heist.scripts.generate_audio:main"
-heist-verify = "heist.verify:main"
+# `heist-demo` — runs the full heist security demo
+# audio generation and verify run via Makefile: make generate-audio / make verify
+heist-demo = "heist.__main__:main"
 
 [project.optional-dependencies]
 test = [
@@ -48,7 +52,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

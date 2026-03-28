@@ -59,7 +59,7 @@ install-dev:
 	$(UV) sync --all-extras
 
 verify:
-	$(UV) run heist-verify
+	$(UV) run python scripts/verify_setup.py
 
 # ---------------------------------------------------------------------------
 # Code quality
@@ -80,7 +80,7 @@ typecheck:
 # ---------------------------------------------------------------------------
 
 generate-audio:
-	$(UV) run heist-audio
+	$(UV) run python scripts/generate_audio.py
 
 demo-heist:
 	$(UV) run heist-demo
@@ -124,17 +124,10 @@ clean-all: clean clean-logs
 # ==============================================================================
 # 🔧 Tooling (annotate + flatten)
 # ==============================================================================
+
 ANNOTATE_SCOPE         ?= .
 ANNOTATE_EXT           ?= .py,.yaml,.yml,.toml,.env
 ANNOTATE_MAX_NEIGHBORS ?= 6
-
-.PHONY: annotate
-annotate: ## Add/update QV-LLM header blocks across repo files
-	$(PYTHON) scripts/annotate_headers.py \
-		--scope "$(ANNOTATE_SCOPE)" \
-		--extensions "$(ANNOTATE_EXT)" \
-		--max-neighbors "$(ANNOTATE_MAX_NEIGHBORS)" \
-		--remove-legacy-path-line
 
 FLATTEN_OUT   ?= _transient-files/flatten
 FLATTEN_EXT   ?= .py,.yaml,.yml,.toml,.env,.example,.md
@@ -142,11 +135,23 @@ FLATTEN_SKIP  ?= .git,.venv,__pycache__,.mypy_cache,.pytest_cache,.ruff_cache,bu
 FLATTEN_SCOPE ?= .
 MAX_BYTES     ?= 4000000
 
+BLUE  := \033[94m
+GREEN := \033[92m
+RESET := \033[0m
+
+.PHONY: annotate
+annotate: ## Add/update QV-LLM header blocks across repo files
+	$(UV) run python scripts/annotate_headers.py \
+		--scope "$(ANNOTATE_SCOPE)" \
+		--extensions "$(ANNOTATE_EXT)" \
+		--max-neighbors "$(ANNOTATE_MAX_NEIGHBORS)" \
+		--remove-legacy-path-line
+
 .PHONY: flatten
 flatten: ## Flatten repo into a single shareable text bundle
 	@echo "$(BLUE)Flattening '$(FLATTEN_SCOPE)' → $(FLATTEN_OUT)...$(RESET)"
 	@mkdir -p "$(FLATTEN_OUT)"
-	$(PYTHON) scripts/flatten.py \
+	$(UV) run python scripts/flatten.py \
 		--mode scope \
 		--scope "$(FLATTEN_SCOPE)" \
 		--out-dir "$(FLATTEN_OUT)" \
@@ -160,7 +165,7 @@ flatten: ## Flatten repo into a single shareable text bundle
 .PHONY: flatten-scope
 flatten-scope: ## Flatten a specific directory: make flatten-scope SCOPE=path/to/dir
 	@test -n "$(SCOPE)" || (echo "Usage: make flatten-scope SCOPE=path/to/dir" && exit 1)
-	$(PYTHON) scripts/flatten.py \
+	$(UV) run python scripts/flatten.py \
 		--mode scope \
 		--scope "$(SCOPE)" \
 		--out-dir "$(FLATTEN_OUT)" \
@@ -168,7 +173,7 @@ flatten-scope: ## Flatten a specific directory: make flatten-scope SCOPE=path/to
 		--skip-dirs "$(FLATTEN_SKIP)" \
 		--exclude "flat.txt" \
 		--exclude "_transient-files/**" \
-		--max-bytes 4000000
+		--max-bytes $(MAX_BYTES)
 
 .PHONY: flatten-clean
 flatten-clean: ## Remove transient flatten outputs

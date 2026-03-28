@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/text.py
+# module: heist.text
+# role: module
+# neighbors: __init__.py, __main__.py, audio.py, demo.py
+# exports: strip_think, clean_for_speech
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.text
 ~~~~~~~~~~

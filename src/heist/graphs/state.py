@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/graphs/state.py
+# module: heist.graphs.state
+# role: module
+# neighbors: __init__.py, bank_graph.py, manager_graph.py, tools.py
+# exports: BankingState, ManagerState
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 graphs/state.py
 

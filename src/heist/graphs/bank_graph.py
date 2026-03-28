@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/graphs/bank_graph.py
+# module: heist.graphs.bank_graph
+# role: module
+# neighbors: __init__.py, manager_graph.py, state.py, tools.py
+# exports: BankGraph
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 graphs/bank_graph.py
 
@@ -36,8 +46,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from graphs.state import BankingState
-from graphs.tools import BANK_TOOLS
+from heist.graphs.state import BankingState
+from heist.graphs.tools import BANK_TOOLS
 
 # ---------------------------------------------------------------------------
 # System prompt

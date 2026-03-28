@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/__main__.py
+# module: heist.__main__
+# role: module
+# neighbors: __init__.py, audio.py, demo.py, text.py
+# exports: main
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.__main__
 ~~~~~~~~~~~~~~
@@ -22,7 +32,6 @@ from heist.graphs.bank_graph import BankGraph
 from heist.graphs.manager_graph import ManagerGraph
 from heist.demo import run_heist
 
-console = logging.getLogger(__name__)
 _console = Console()
 
 

@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/agents/caller_agent.py
+# module: heist.agents.caller_agent
+# role: module
+# neighbors: __init__.py, security_classifier.py
+# exports: CallerAgent
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.agents.caller_agent
 ~~~~~~~~~~~~~~~~~~~~~~~~~

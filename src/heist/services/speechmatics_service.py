@@ -1,21 +1,21 @@
 # === QV-LLM:BEGIN ===
-# path: services/speechmatics_service.py
+# path: src/heist/services/speechmatics_service.py
+# module: heist.services.speechmatics_service
 # role: module
-# neighbors: __init__.py, asr_service.py, demo_logger.py, tts_service.py
+# neighbors: __init__.py, demo_logger.py
 # exports: SpeechmaticsTTSError, SpeechmaticsASRError, SpeechmaticsService
-# git_branch: feature/speechmaticsRefactoring
-# git_commit: a02fa3a
+# git_branch: main
+# git_commit: 1734031
 # === QV-LLM:END ===
 
 """
-services/speechmatics_service.py
-
+heist.services.speechmatics_service
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Unified Speechmatics TTS + ASR service.
-Drop-in replacement for the old Rime TTS service.
 
 Voice mapping:
     caller  → megan   US female  — Alex Chen, the bank customer
-    rasa    → theo    UK male    — the automated banking line
+    bank    → theo    UK male    — the automated banking line
     manager → sarah   UK female  — Patricia Walsh, senior manager
 
 TTS pipeline:
@@ -28,7 +28,7 @@ ASR pipeline (optional, controlled by ENABLE_SPEECHMATICS_ASR=true):
     Feeds raw PCM to Speechmatics RT ASR via WebSocket (BytesIO stream).
     Returns the final transcript string.
     This closes the realistic speech loop:
-        LLM text → TTS → play → ASR → Rasa
+        LLM text → TTS → play → ASR → Bank Graph
 """
 
 import asyncio
@@ -52,7 +52,7 @@ ASR_URL      = "wss://eu.rt.speechmatics.com/v2"
 
 VOICE_MAP = {
     "caller":  "megan",   # US female  — Alex Chen, the bank customer
-    "rasa":    "theo",    # UK male    — automated banking line (formal)
+    "bank":    "theo",    # UK male    — automated banking line (formal)
     "manager": "sarah",   # UK female  — Patricia Walsh (warm, senior)
 }
 
@@ -93,15 +93,15 @@ class SpeechmaticsService:
         audio_bytes, transcript = await svc.synthesize_and_transcribe(
             "Hello world", agent_role="caller"
         )
-        # transcript is what you send to Rasa
+        # transcript is what you send to the Bank Graph
 
     Required env vars:
-        SPEECHMATICS_API_KEY   — your Speechmatics API key
-        ENABLE_SPEECHMATICS_ASR (optional, default false)
-                               — set to "true" to enable the TTS→ASR round-trip
+        SPEECHMATICS_API_KEY    — your Speechmatics API key
+        ENABLE_SPEECHMATICS_ASR — set to "true" to enable the TTS→ASR round-trip
+                                  (optional, default false)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.api_key = os.environ.get("SPEECHMATICS_API_KEY", "").strip()
         if not self.api_key:
             raise ValueError(
@@ -113,7 +113,8 @@ class SpeechmaticsService:
         )
         logger.info(
             "SpeechmaticsService ready — ASR loop %s",
-            "ENABLED" if self.asr_enabled else "disabled (set ENABLE_SPEECHMATICS_ASR=true to enable)",
+            "ENABLED" if self.asr_enabled
+            else "disabled (set ENABLE_SPEECHMATICS_ASR=true to enable)",
         )
 
     # ------------------------------------------------------------------ TTS
@@ -124,7 +125,7 @@ class SpeechmaticsService:
 
         Args:
             text:       The text to synthesise.
-            agent_role: One of "caller", "rasa", "manager".
+            agent_role: One of "caller", "bank", "manager".
                         Determines the voice used.
 
         Returns:
@@ -158,7 +159,7 @@ class SpeechmaticsService:
                             f"Speechmatics TTS HTTP {resp.status} for voice={voice}: "
                             f"{body[:300]}"
                         )
-                    chunks = []
+                    chunks: list[bytes] = []
                     async for chunk in resp.content.iter_chunked(4096):
                         chunks.append(chunk)
                     audio_bytes = b"".join(chunks)
@@ -194,7 +195,6 @@ class SpeechmaticsService:
         Returns:
             Transcript string, or empty string if ASR fails (non-fatal).
         """
-        # Strip standard 44-byte WAV header → raw PCM s16le
         pcm_data = wav_bytes[WAV_HEADER_BYTES:]
         if not pcm_data:
             logger.warning("transcribe() called with empty PCM after header strip")
@@ -219,17 +219,16 @@ class SpeechmaticsService:
             event_handler=on_transcript,
         )
 
-        # Audio settings: raw PCM s16le at 16 kHz (matches TTS output)
-        audio_settings = speechmatics.models.AudioSettings()
-        audio_settings.encoding    = "pcm_s16le"
-        audio_settings.sample_rate = SAMPLE_RATE
-        audio_settings.chunk_size  = 1024
+        audio_settings              = speechmatics.models.AudioSettings()
+        audio_settings.encoding     = "pcm_s16le"
+        audio_settings.sample_rate  = SAMPLE_RATE
+        audio_settings.chunk_size   = 1024
 
         conf = speechmatics.models.TranscriptionConfig(
             language="en",
             operating_point="enhanced",
-            max_delay=1.0,          # Low latency — pre-recorded buffer runs fast
-            enable_partials=False,  # Finals only — we want the clean transcript
+            max_delay=1.0,
+            enable_partials=False,
         )
 
         audio_stream = io.BytesIO(pcm_data)
@@ -241,9 +240,9 @@ class SpeechmaticsService:
                 lambda: ws.run_synchronously(audio_stream, conf, audio_settings),
             )
         except Exception as exc:
-            # ASR failure is non-fatal — caller in demo_heist.py falls back to
-            # the original LLM text when the transcript comes back empty.
-            logger.warning("Speechmatics ASR failed (using LLM text fallback): %s", exc)
+            logger.warning(
+                "Speechmatics ASR failed (using LLM text fallback): %s", exc
+            )
             return ""
 
         transcript = " ".join(transcript_parts).strip()
@@ -261,15 +260,15 @@ class SpeechmaticsService:
         TTS the text, then (if ASR is enabled) transcribe the audio.
 
         Returns:
-            (wav_bytes, transcript_for_rasa)
+            (wav_bytes, transcript)
 
-            transcript_for_rasa is:
+            transcript is:
               - the ASR transcript  if ENABLE_SPEECHMATICS_ASR=true and ASR succeeded
               - the original text   otherwise (ASR disabled or failed)
 
-        The caller in demo_heist.py should:
-            1. Use wav_bytes for audio playback (same as before)
-            2. Send transcript_for_rasa to Rasa (instead of the raw LLM text)
+        Usage in demo.py:
+            1. Pass wav_bytes to play_audio / play_audio_with_typewriter
+            2. Pass transcript to the Bank Graph (instead of the raw LLM text)
         """
         wav_bytes = await self.synthesize(text, agent_role)
 

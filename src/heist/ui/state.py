@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/ui/state.py
+# module: heist.ui.state
+# role: module
+# neighbors: __init__.py, bubbles.py, layout.py
+# exports: DemoState
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.ui.state
 ~~~~~~~~~~~~~~

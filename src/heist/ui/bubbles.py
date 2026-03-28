@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/ui/bubbles.py
+# module: heist.ui.bubbles
+# role: module
+# neighbors: __init__.py, layout.py, state.py
+# exports: conversation_bubble, compact_line, render_conversation
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.ui.bubbles
 ~~~~~~~~~~~~~~~~

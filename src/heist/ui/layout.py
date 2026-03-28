@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/ui/layout.py
+# module: heist.ui.layout
+# role: module
+# neighbors: __init__.py, bubbles.py, state.py
+# exports: make_layout, render_header, render_security_monitor, render_ground_truth, render_status, render_transfer_announcement
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 heist.ui.layout
 ~~~~~~~~~~~~~~~

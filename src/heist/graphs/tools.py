@@ -1,3 +1,13 @@
+# === QV-LLM:BEGIN ===
+# path: src/heist/graphs/tools.py
+# module: heist.graphs.tools
+# role: module
+# neighbors: __init__.py, bank_graph.py, manager_graph.py, state.py
+# exports: check_balance, get_transactions, transfer_money, block_card, request_human, lookup_account_balance, end_call
+# git_branch: main
+# git_commit: 1734031
+# === QV-LLM:END ===
+
 """
 graphs/tools.py
 
