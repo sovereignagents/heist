@@ -55,3 +55,5 @@ langchain.db
 _transient-files/
 **/_transient-files/
 .logs/
+
+tests/audio/
