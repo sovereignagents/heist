@@ -12,20 +12,20 @@ heist.demo
 ~~~~~~~~~~
 Main orchestration loop for the heist security demo.
 
-This module owns two things only:
+This module owns:
   • preflight()  — validate env vars before the demo starts
   • run_heist()  — the turn-by-turn demo loop
 
 Everything else (UI rendering, audio, text cleaning, graphs, agents,
-TTS) is imported from its own focused module.  The graphs themselves
-are instantiated once in __main__.py and passed in to keep this module
-testable without standing up real LLM connections.
+TTS, logging) is imported from its own focused module. The graphs
+are instantiated once in __main__.py and passed in.
 """
 
 import asyncio
 import logging
 import os
 import time
+import traceback
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -45,6 +45,7 @@ from heist.audio import play_audio, play_audio_with_typewriter
 from heist.graphs.bank_graph import BankGraph
 from heist.graphs.manager_graph import ManagerGraph
 from heist.scenario.arc import SCENARIO_ARC, STAGE_DESCRIPTIONS
+from heist.services.demo_logger import DemoLogger
 from heist.services.speechmatics_service import SpeechmaticsService, SpeechmaticsTTSError
 from heist.text import clean_for_speech
 from heist.ui.bubbles import conversation_bubble, render_conversation
@@ -71,10 +72,6 @@ MIN_TERMINAL_WIDTH = 120
 # ---------------------------------------------------------------------------
 
 async def preflight(layout: Layout, state: DemoState) -> bool:
-    """
-    Check required env vars before starting the demo.
-    Returns True if all checks pass, False otherwise.
-    """
     if console.width < MIN_TERMINAL_WIDTH:
         console.print(
             f"\n[yellow]⚠  Terminal width is {console.width} columns. "
@@ -110,21 +107,11 @@ async def preflight(layout: Layout, state: DemoState) -> bool:
 # ---------------------------------------------------------------------------
 
 async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
-    """
-    Execute the full heist scenario end-to-end.
-
-    Args:
-        bank_graph:    Structured banking graph (replaces Rasa CALM).
-        manager_graph: Ungrounded Patricia graph (replaces llm_manager sub-agent).
-
-    Conversation histories are owned here and grow across turns.
-    Each graph receives the full history on every call so the LLM
-    has complete context — no server-side state needed.
-    """
     caller     = CallerAgent()
     classifier = SecurityClassifier()
     tts        = SpeechmaticsService()
     state      = DemoState()
+    log        = DemoLogger(session_name="heist")
 
     bank_messages:    list = []
     manager_messages: list = []
@@ -141,6 +128,7 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
     with Live(layout, refresh_per_second=16, screen=True):
 
         if not await preflight(layout, state):
+            log.close()
             return
 
         layout["status"].update(render_status(
@@ -153,10 +141,12 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
 
         # ── Turn loop ─────────────────────────────────────────────────────
         for turn_config in SCENARIO_ARC:
-            state.turn  = turn_config.turn_number
+            state.turn     = turn_config.turn_number
             state.thinking = False
-            stage_label = STAGE_DESCRIPTIONS.get(turn_config.stage, "")
+            stage_label    = STAGE_DESCRIPTIONS.get(turn_config.stage, "")
             layout["header"].update(render_header(state))
+
+            log.turn_start(state.turn, stage_label, turn_config.audience_hint)
 
             # ── Caller generates speech ───────────────────────────────────
             state.thinking       = True
@@ -165,11 +155,21 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
                 render_status("", "cyan", "cyan", turn_config.audience_hint, state)
             )
 
+            t0 = time.time()
             try:
                 caller_text = await caller.speak(turn_config)
             except Exception as exc:
                 logger.error("CallerAgent error: %s", exc)
+                log.error("caller_agent", str(exc), exc)
                 caller_text = "I see, interesting."
+
+            log.llm_request(
+                component="caller_agent",
+                model="google/gemma-3-27b-it-fast",
+                messages=caller.memory,
+                response=caller_text,
+                duration_ms=(time.time() - t0) * 1000,
+            )
 
             state.thinking = False
             layout["status"].update(render_status(
@@ -181,14 +181,20 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
             # TTS caller + optional ASR round-trip
             asr_text = caller_text
             try:
+                t0 = time.time()
                 caller_audio, asr_text = await tts.synthesize_and_transcribe(
                     caller_text, agent_role="caller"
+                )
+                log.tts_request(
+                    "caller", "megan", caller_text,
+                    len(caller_audio), (time.time() - t0) * 1000,
                 )
                 await play_audio_with_typewriter(
                     caller_audio, caller_text, "caller", state, layout
                 )
             except SpeechmaticsTTSError as exc:
                 logger.warning("Caller TTS: %s", exc)
+                log.error("tts_caller", str(exc), exc)
                 state.conversation.append(conversation_bubble(caller_text, "caller"))
                 layout["conversation"].update(render_conversation(state))
 
@@ -200,23 +206,35 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
                 render_status("", "green", "green", turn_config.audience_hint, state)
             )
 
+            t0 = time.time()
+
             if not state.transferred:
                 bank_messages, bank_response, transfer_requested = \
-                    await _bank_turn(bank_graph, asr_text, bank_messages)
+                    await _bank_turn(bank_graph, asr_text, bank_messages, log)
                 bank_response = clean_for_speech(bank_response)
 
+                log.graph_exchange(
+                    "bank_graph", asr_text, bank_response,
+                    (time.time() - t0) * 1000,
+                )
+
                 if transfer_requested:
+                    log.transfer_event(state.turn, bank_response)
                     bank_messages, manager_messages = await _handle_transfer(
-                        tts, caller, manager_graph,
-                        state, layout,
+                        tts, caller, manager_graph, state, layout, log,
                     )
                     continue
 
             else:
                 manager_messages, bank_response = await _manager_turn(
-                    manager_graph, asr_text, manager_messages
+                    manager_graph, asr_text, manager_messages, log
                 )
                 bank_response = clean_for_speech(bank_response)
+
+                log.graph_exchange(
+                    "manager_graph", asr_text, bank_response,
+                    (time.time() - t0) * 1000,
+                )
 
             # ── Shared post-response path ─────────────────────────────────
             state.thinking = False
@@ -235,7 +253,7 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
                 "LLM SUB-AGENT" if state.transferred else "BANK",
             )
 
-            # Security classification runs concurrently with TTS
+            # Security classification concurrent with TTS
             label_task = asyncio.create_task(
                 classifier.classify(caller_text, bank_response, agent_key)
             )
@@ -249,12 +267,21 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
             ))
 
             try:
+                t0 = time.time()
                 bank_audio = await tts.synthesize(bank_response, agent_role=agent_key)
+                log.tts_request(
+                    agent_key,
+                    "sarah" if state.transferred else "theo",
+                    bank_response,
+                    len(bank_audio),
+                    (time.time() - t0) * 1000,
+                )
                 await play_audio_with_typewriter(
                     bank_audio, bank_response, agent_key, state, layout
                 )
             except SpeechmaticsTTSError as exc:
                 logger.warning("Bank TTS: %s", exc)
+                log.error(f"tts_{agent_key}", str(exc), exc)
                 state.conversation.append(conversation_bubble(bank_response, agent_key))
                 layout["conversation"].update(render_conversation(state))
 
@@ -264,6 +291,12 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
                 (state.turn, label, turn_config.audience_hint[:48])
             )
             layout["security"].update(render_security_monitor(state))
+
+            log.security_classification(
+                state.turn, label.value,
+                caller_text, bank_response, agent_key,
+            )
+
             layout["status"].update(render_status(
                 f"{emoji}  Security verdict: {display}",
                 colour, colour,
@@ -274,25 +307,31 @@ async def run_heist(bank_graph: BankGraph, manager_graph: ManagerGraph) -> None:
         # ── Finale ────────────────────────────────────────────────────────
         state.turn = state.total_turns
         layout["header"].update(render_header(state))
-        layout["status"].update(_render_finale(state))
+        finale_panel, security_summary = _build_finale(state)
+        layout["status"].update(finale_panel)
+
+        log.close(security_summary=security_summary)
         await asyncio.sleep(15)
 
 
 # ---------------------------------------------------------------------------
-# Private turn helpers  (keep run_heist() readable)
+# Private turn helpers
 # ---------------------------------------------------------------------------
 
 async def _bank_turn(
     bank_graph: BankGraph,
     user_text: str,
     history: list,
+    log: DemoLogger,
 ) -> tuple[list, str, bool]:
-    """Invoke BankGraph and return (updated_history, response, transfer_requested)."""
+    """Invoke BankGraph; capture and log the full exception if it fails."""
     try:
         response, transfer, updated = await bank_graph.ainvoke(user_text, history)
         return updated, response, transfer
     except Exception as exc:
-        logger.error("BankGraph error: %s", exc)
+        tb = traceback.format_exc()
+        logger.error("BankGraph error: %s\n%s", exc, tb)
+        log.error("bank_graph", f"{type(exc).__name__}: {exc}\n{tb}")
         return history, "I'm having technical difficulties.", False
 
 
@@ -300,13 +339,16 @@ async def _manager_turn(
     manager_graph: ManagerGraph,
     user_text: str,
     history: list,
+    log: DemoLogger,
 ) -> tuple[list, str]:
-    """Invoke ManagerGraph and return (updated_history, response)."""
+    """Invoke ManagerGraph; capture and log the full exception if it fails."""
     try:
         response, updated = await manager_graph.ainvoke(user_text, history)
         return updated, response
     except Exception as exc:
-        logger.error("ManagerGraph error: %s", exc)
+        tb = traceback.format_exc()
+        logger.error("ManagerGraph error: %s\n%s", exc, tb)
+        log.error("manager_graph", f"{type(exc).__name__}: {exc}\n{tb}")
         return history, "I'm here — sorry, could you repeat that?"
 
 
@@ -316,17 +358,8 @@ async def _handle_transfer(
     manager_graph: ManagerGraph,
     state: DemoState,
     layout: Layout,
+    log: DemoLogger,
 ) -> tuple[list, list]:
-    """
-    Orchestrate the dramatic handoff from BankGraph to ManagerGraph:
-      1. Speak the canned transfer acknowledgement (bank voice)
-      2. Show the transfer announcement panel
-      3. Play the caller's hold greeting
-      4. Get and speak Patricia's opening response
-
-    Returns (updated_bank_messages, updated_manager_messages).
-    The bank messages are returned unchanged — they are frozen at handoff.
-    """
     state.thinking = False
 
     # 1 · Transfer acknowledgement
@@ -335,12 +368,15 @@ async def _handle_transfer(
         "of our team right now. Please hold for just a moment."
     )
     try:
+        t0 = time.time()
         ack_audio = await tts.synthesize(ack, agent_role="bank")
+        log.tts_request("bank", "theo", ack, len(ack_audio), (time.time() - t0) * 1000)
         state.conversation.append(conversation_bubble(ack, "bank"))
         layout["conversation"].update(render_conversation(state))
         await play_audio(ack_audio)
     except SpeechmaticsTTSError as exc:
         logger.warning("Transfer ack TTS: %s", exc)
+        log.error("tts_transfer_ack", str(exc), exc)
         state.conversation.append(conversation_bubble(ack, "bank"))
         layout["conversation"].update(render_conversation(state))
 
@@ -361,19 +397,22 @@ async def _handle_transfer(
     # 3 · Caller's greeting after hold
     greeting = "Hello? I was just put on hold and transferred. Is someone there?"
     try:
+        t0 = time.time()
         greet_audio, _ = await tts.synthesize_and_transcribe(
             greeting, agent_role="caller"
         )
+        log.tts_request("caller", "megan", greeting, len(greet_audio), (time.time() - t0) * 1000)
         await play_audio_with_typewriter(
             greet_audio, greeting, "caller", state, layout
         )
     except SpeechmaticsTTSError as exc:
         logger.warning("Greeting TTS: %s", exc)
+        log.error("tts_caller_greeting", str(exc), exc)
         state.conversation.append(conversation_bubble(greeting, "caller"))
         layout["conversation"].update(render_conversation(state))
     caller.add_own_turn(greeting)
 
-    # 4 · Patricia's opening — fresh history (no bank turns passed through)
+    # 4 · Patricia's opening
     state.thinking       = True
     state.thinking_label = "Patricia is picking up..."
     layout["status"].update(render_status(
@@ -381,31 +420,39 @@ async def _handle_transfer(
     ))
 
     manager_messages, patricia_greeting = await _manager_turn(
-        manager_graph, greeting, []
+        manager_graph, greeting, [], log
     )
     patricia_greeting = clean_for_speech(patricia_greeting)
     state.thinking = False
 
+    log.graph_exchange("manager_graph", greeting, patricia_greeting)
+
     if patricia_greeting:
         try:
+            t0 = time.time()
             greet_audio = await tts.synthesize(patricia_greeting, agent_role="manager")
+            log.tts_request(
+                "manager", "sarah", patricia_greeting,
+                len(greet_audio), (time.time() - t0) * 1000,
+            )
             await play_audio_with_typewriter(
                 greet_audio, patricia_greeting, "manager", state, layout
             )
         except SpeechmaticsTTSError as exc:
             logger.warning("Patricia greeting TTS: %s", exc)
+            log.error("tts_manager_greeting", str(exc), exc)
             state.conversation.append(conversation_bubble(patricia_greeting, "manager"))
             layout["conversation"].update(render_conversation(state))
         caller.add_bank_response(patricia_greeting, "LLM SUB-AGENT")
 
-    return [], manager_messages  # bank history frozen; return fresh manager history
+    return [], manager_messages
 
 
 # ---------------------------------------------------------------------------
-# Finale panel
+# Finale
 # ---------------------------------------------------------------------------
 
-def _render_finale(state: DemoState) -> Panel:
+def _build_finale(state: DemoState) -> tuple[Panel, dict]:
     evts = state.security_events
 
     def _count(labels: tuple) -> int:
@@ -417,19 +464,27 @@ def _render_finale(state: DemoState) -> Panel:
     leaked       = _count((SecurityLabel.LEAKED, SecurityLabel.COMPROMISED))
     offtopic     = _count((SecurityLabel.OFF_TOPIC,))
 
+    summary = {
+        "safe_turns":            safe,
+        "blocked_by_bank_graph": blocked,
+        "hallucinated":          hallucinated,
+        "leaked_or_compromised": leaked,
+        "off_topic_answered":    offtopic,
+    }
+
     grid = Table.grid(expand=True, padding=(1, 3))
     for _ in range(5):
         grid.add_column(justify="center")
 
     grid.add_row(
-        Text(f"✅  {safe}\nSafe turns",                           style="bold green",       justify="center"),
-        Text(f"🛡   {blocked}\nBlocked by Bank Graph",            style="bold cyan",        justify="center"),
-        Text(f"🧠  {hallucinated}\nHallucinated\n(LLM Sub-Agent)", style="bold red",         justify="center"),
+        Text(f"✅  {safe}\nSafe turns",                              style="bold green",       justify="center"),
+        Text(f"🛡   {blocked}\nBlocked by Bank Graph",               style="bold cyan",        justify="center"),
+        Text(f"🧠  {hallucinated}\nHallucinated\n(LLM Sub-Agent)",   style="bold red",         justify="center"),
         Text(f"🚨  {leaked}\nLeaked / Compromised\n(LLM Sub-Agent)", style="bold dark_orange", justify="center"),
         Text(f"🎂  {offtopic}\nOff-topic answered\n(LLM Sub-Agent)", style="bold magenta",     justify="center"),
     )
 
-    return Panel(
+    panel = Panel(
         grid,
         title=(
             "[bold white]  ✅  DEMO COMPLETE  —  "
@@ -438,3 +493,4 @@ def _render_finale(state: DemoState) -> Panel:
         ),
         border_style="green",
     )
+    return panel, summary

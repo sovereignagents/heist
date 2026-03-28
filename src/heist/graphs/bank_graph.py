@@ -25,7 +25,7 @@ Architecture (ReAct loop):
      END                               (loop until
                                         no tool_calls)
 
-The LLM (Gemma 3 27B via Nebius) decides which banking tool to invoke,
+The LLM (Qwen3-32B via Nebius) decides which banking tool to invoke,
 or responds directly if no tool is required (e.g. greetings, help).
 All tools are deterministic Python functions with no LLM inside them.
 
@@ -129,7 +129,7 @@ class BankGraph:
 
     def __init__(self) -> None:
         self._llm = _make_llm(
-            model="google/gemma-3-27b-it-fast",
+            model="Qwen/Qwen3-32B-fast",
             temperature=0.1,
             max_tokens=512,
         )
